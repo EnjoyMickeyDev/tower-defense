@@ -1,0 +1,72 @@
+{
+  "name": "tower-defense-launcher",
+  "version": "1.0.0",
+  "description": "Лаунчер Tower Defense с автообновлением",
+  "main": "main.js",
+  "author": {
+    "name": "EnjoyMickeyDev",
+    "email": "enjoymickey@example.com"
+  },
+  "homepage": "https://github.com/EnjoyMickeyDev/tower-defense",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "build:mac": "electron-builder --mac",
+    "publish": "electron-builder --publish always"
+  },
+  "build": {
+    "appId": "com.yourname.towerdefense",
+    "productName": "Tower Defense",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!game/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "game",
+        "to": "game",
+        "filter": ["**/*"]
+      }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "EnjoyMickeyDev",
+      "repo": "tower-defense"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "category": "Game"
+    },
+    "mac": {
+      "target": ["dmg"],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.games"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.7",
+    "electron-log": "^5.0.3"
+  },
+  "devDependencies": {
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1"
+  }
+}

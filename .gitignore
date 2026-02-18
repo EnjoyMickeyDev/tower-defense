@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Game files (экспортируются из Godot)
+game/*.exe
+game/*.pck
+game/*.x86_64
+game/*.app
+game/*.dll
+game/*.so
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+*.local
