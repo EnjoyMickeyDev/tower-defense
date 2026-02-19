@@ -1,9 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const path = require('path');
-const { spawn } = require('child_process');
-const fs = require('fs');
 
 // Настройка логирования
 log.transports.file.level = 'info';
@@ -13,77 +11,29 @@ autoUpdater.autoInstallOnAppQuit = true;
 
 let mainWindow;
 
-// Путь к игре
-function getGamePath() {
-  const resourcesPath = process.resourcesPath || path.join(__dirname);
-  
-  // В режиме разработки
-  if (!app.isPackaged) {
-    return path.join(__dirname, 'game');
-  }
-  
-  // В собранном приложении
-  return path.join(resourcesPath, 'game');
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    resizable: false,
+    width: 1280,
+    height: 720,
+    minWidth: 800,
+    minHeight: 600,
+    resizable: true,
     frame: false,
-    transparent: false,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#0d47a1',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      webviewTag: true,
       preload: path.join(__dirname, 'preload.js')
     }
   });
 
   mainWindow.loadFile('index.html');
   
-  // Открыть DevTools в режиме разработки
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools();
   }
-}
-
-// Запуск игры
-function launchGame() {
-  const gamePath = getGamePath();
-  
-  // Определяем исполняемый файл в зависимости от платформы
-  let executable;
-  if (process.platform === 'win32') {
-    executable = path.join(gamePath, 'TowerDefense.exe');
-  } else if (process.platform === 'darwin') {
-    executable = path.join(gamePath, 'TowerDefense.app', 'Contents', 'MacOS', 'TowerDefense');
-  } else {
-    executable = path.join(gamePath, 'TowerDefense.x86_64');
-  }
-
-  log.info('Запуск игры:', executable);
-
-  if (!fs.existsSync(executable)) {
-    log.error('Игра не найдена:', executable);
-    mainWindow.webContents.send('game-error', 'Файл игры не найден. Попробуйте переустановить.');
-    return;
-  }
-
-  const gameProcess = spawn(executable, [], {
-    cwd: gamePath,
-    detached: true,
-    stdio: 'ignore'
-  });
-
-  gameProcess.unref();
-  
-  // Закрываем лаунчер после запуска игры
-  setTimeout(() => {
-    app.quit();
-  }, 1000);
 }
 
 // ==================== AUTO UPDATER ====================
@@ -103,7 +53,7 @@ autoUpdater.on('update-available', (info) => {
 });
 
 autoUpdater.on('update-not-available', (info) => {
-  log.info('Обновлений нет, текущая версия актуальна');
+  log.info('Обновлений нет');
   sendToRenderer('update-status', { 
     status: 'not-available', 
     message: 'У вас последняя версия',
@@ -113,19 +63,18 @@ autoUpdater.on('update-not-available', (info) => {
 
 autoUpdater.on('download-progress', (progressObj) => {
   const percent = Math.round(progressObj.percent);
-  log.info(`Загрузка: ${percent}%`);
   sendToRenderer('update-status', { 
     status: 'downloading', 
-    message: `Загрузка обновления: ${percent}%`,
+    message: `Загрузка: ${percent}%`,
     progress: percent
   });
 });
 
 autoUpdater.on('update-downloaded', (info) => {
-  log.info('Обновление загружено:', info.version);
+  log.info('Обновление загружено');
   sendToRenderer('update-status', { 
     status: 'downloaded', 
-    message: 'Обновление готово к установке',
+    message: 'Обновление готово',
     version: info.version
   });
 });
@@ -134,7 +83,7 @@ autoUpdater.on('error', (error) => {
   log.error('Ошибка автообновления:', error);
   sendToRenderer('update-status', { 
     status: 'error', 
-    message: 'Ошибка проверки обновлений'
+    message: 'Ошибка обновления'
   });
 });
 
@@ -146,55 +95,104 @@ function sendToRenderer(channel, data) {
 
 // ==================== IPC HANDLERS ====================
 
-ipcMain.handle('get-app-version', () => {
-  return app.getVersion();
-});
-
+ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('check-updates', async () => {
   try {
     await autoUpdater.checkForUpdates();
     return { success: true };
   } catch (error) {
-    log.error('Ошибка проверки обновлений:', error);
     return { success: false, error: error.message };
   }
 });
-
-ipcMain.handle('install-update', () => {
-  autoUpdater.quitAndInstall(false, true);
+ipcMain.handle('install-update', () => autoUpdater.quitAndInstall(false, true));
+ipcMain.handle('close-app', () => app.quit());
+ipcMain.handle('minimize-app', () => mainWindow.minimize());
+ipcMain.handle('maximize-app', () => {
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
 });
 
-ipcMain.handle('launch-game', () => {
-  launchGame();
-});
+// ==================== DISCORD OAUTH ====================
 
-ipcMain.handle('close-app', () => {
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('tower-defense', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('tower-defense');
+}
+
+let discordResolve = null;
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
   app.quit();
-});
+} else {
+  app.on('second-instance', (event, commandLine) => {
+    const url = commandLine.find(arg => arg.startsWith('tower-defense://'));
+    if (url) handleDiscordCallback(url);
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
-ipcMain.handle('minimize-app', () => {
-  mainWindow.minimize();
+function handleDiscordCallback(url) {
+  try {
+    const urlObj = new URL(url);
+    const code = urlObj.searchParams.get('code');
+    const error = urlObj.searchParams.get('error');
+    
+    if (discordResolve) {
+      if (error || !code) {
+        discordResolve({ success: false, error: 'Авторизация отменена' });
+      } else {
+        fetch(`http://103.137.251.209/api/auth/discord/token?code=${code}`)
+          .then(r => r.json())
+          .then(data => {
+            discordResolve(data);
+            discordResolve = null;
+          })
+          .catch(() => {
+            discordResolve({ success: false, error: 'Ошибка авторизации' });
+            discordResolve = null;
+          });
+        return;
+      }
+      discordResolve = null;
+    }
+  } catch (e) {
+    log.error('Discord callback error:', e);
+  }
+}
+
+ipcMain.handle('discord-login', async () => {
+  return new Promise((resolve) => {
+    discordResolve = resolve;
+    shell.openExternal('http://103.137.251.209/api/auth/discord?app=1');
+    setTimeout(() => {
+      if (discordResolve) {
+        discordResolve({ success: false, error: 'Время истекло' });
+        discordResolve = null;
+      }
+    }, 300000);
+  });
 });
 
 // ==================== APP LIFECYCLE ====================
 
 app.whenReady().then(() => {
   createWindow();
-  
-  // Проверяем обновления при запуске
   if (app.isPackaged) {
-    setTimeout(() => {
-      autoUpdater.checkForUpdates();
-    }, 2000);
+    autoUpdater.checkForUpdates();
   }
 });
 
-app.on('window-all-closed', () => {
-  app.quit();
-});
-
+app.on('window-all-closed', () => app.quit());
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
